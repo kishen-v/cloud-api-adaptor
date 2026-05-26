@@ -97,7 +97,7 @@ versions-check: ## Validate versions.yaml against the JSON schema
 .PHONY: test-e2e
 test-e2e: ## Run end-to-end tests for single provider.
 ifneq ($(CLOUD_PROVIDER),)
-	go test -v -tags=$(CLOUD_PROVIDER) -timeout $(TEST_E2E_TIMEOUT) -count=1 -run $(RUN_TESTS) ./test/e2e
+	go test -v -tags=$(subst -,_,$(CLOUD_PROVIDER)) -timeout $(TEST_E2E_TIMEOUT) -count=1 -run $(RUN_TESTS) ./test/e2e
 else
 	$(error CLOUD_PROVIDER is not set)
 endif
