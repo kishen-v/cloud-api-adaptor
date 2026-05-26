@@ -19,7 +19,6 @@ type IBMPowerVSProperties struct {
 	Region                   string
 	WorkerOS                 string
 	TestPodVMImage           string
-	Zone                     string
 	PowerVSZone              string
 	PowerVSServiceInstanceID string
 	PowerVSNetworkID         string
@@ -46,7 +45,6 @@ func InitIBMCloudProperties(properties map[string]string) error {
 		ApiKey:                   properties["IBMCLOUD_API_KEY"],
 		Region:                   properties["REGION"],
 		WorkerOS:                 properties["WORKER_OS"],
-		Zone:                     properties["ZONE"],
 		PowerVSZone:              properties["POWERVS_ZONE"],
 		PowerVSServiceInstanceID: properties["POWERVS_SERVICE_INSTANCE_ID"],
 		PowerVSNetworkID:         properties["POWERVS_NETWORK_ID"],
@@ -85,12 +83,8 @@ func InitIBMCloudProperties(properties map[string]string) error {
 		}
 	}
 
-	if len(IBMPowerVSProps.Zone) <= 0 {
-		if len(IBMPowerVSProps.PowerVSZone) > 0 {
-			IBMPowerVSProps.Zone = IBMPowerVSProps.PowerVSZone
-		} else {
-			log.Info("[warning] ZONE was not set.")
-		}
+	if len(IBMPowerVSProps.PowerVSZone) <= 0 {
+		log.Info("[warning] POWERVS_ZONE was not set.")
 	}
 
 	needProvisionStr := os.Getenv("TEST_PROVISION")

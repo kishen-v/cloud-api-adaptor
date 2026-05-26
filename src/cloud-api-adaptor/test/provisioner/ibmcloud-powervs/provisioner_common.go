@@ -272,7 +272,7 @@ func (p *IBMCloudPowerVSProvisioner) DeleteCluster(ctx context.Context, cfg *env
 
 	// Set default values
 	if p.KubernetesBuildVersion == "" {
-		p.KubernetesBuildVersion = "1.35.2"
+		p.KubernetesBuildVersion = "1.36.1"
 	}
 	if p.KubernetesReleaseMarker == "" {
 		p.KubernetesReleaseMarker = p.KubernetesBuildVersion
@@ -382,9 +382,8 @@ func InitIBMCloudPowerVSProperties(properties map[string]string) error {
 
 	IBMPowerVSProps = &IBMPowerVSProperties{
 		IBMCloudProvider: properties["IBMCLOUD_PROVIDER"],
-		ApiKey:           properties["APIKEY"],
-		Region:           properties["REGION"],
-		Zone:             properties["ZONE"],
+		ApiKey:           properties["IBMCLOUD_API_KEY"],
+		Region:           properties["POWERVS_REGION"],
 	}
 
 	workerCountStr := properties["WORKERS_COUNT"]
@@ -399,17 +398,17 @@ func InitIBMCloudPowerVSProperties(properties map[string]string) error {
 		}
 	}
 
-	if len(IBMPowerVSProps.Zone) <= 0 {
-		log.Info("[warning] ZONE was not set.")
+	if len(IBMPowerVSProps.PowerVSZone) <= 0 {
+		log.Info("POWERVS_ZONE was not set.")
 	}
 
 	needProvisionStr := os.Getenv("TEST_PROVISION")
 	if strings.EqualFold(needProvisionStr, "yes") || strings.EqualFold(needProvisionStr, "true") || pv.Action == "uploadimage" {
 		if len(IBMPowerVSProps.ApiKey) <= 0 {
-			return errors.New("APIKEY is required for provisioning")
+			return errors.New("IBMCLOUD_API_KEY is required for provisioning")
 		}
 		if len(IBMPowerVSProps.Region) <= 0 {
-			return errors.New("REGION was not set.")
+			return errors.New("POWERVS_REGION was not set.")
 		}
 	}
 	return nil
