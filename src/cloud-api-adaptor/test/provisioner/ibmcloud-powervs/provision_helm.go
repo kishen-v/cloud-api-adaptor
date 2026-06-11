@@ -8,6 +8,7 @@ package ibmcloud_powervs
 import (
 	"context"
 	"path/filepath"
+	"strings"
 
 	pv "github.com/confidential-containers/cloud-api-adaptor/src/cloud-api-adaptor/test/provisioner"
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
@@ -18,8 +19,10 @@ func NewIBMCloudPowerVSInstallChart(installDir, provider string) (pv.InstallChar
 	namespace := pv.GetCAANamespace()
 	releaseName := "peerpods"
 	debug := false
+	// Convert provider name from ibmcloud_powervs to ibmcloud-powervs for helm values
+	providerName := strings.ReplaceAll(provider, "_", "-")
 
-	helm, err := pv.NewHelm(chartPath, namespace, releaseName, provider, debug)
+	helm, err := pv.NewHelm(chartPath, namespace, releaseName, providerName, debug)
 	if err != nil {
 		return nil, err
 	}

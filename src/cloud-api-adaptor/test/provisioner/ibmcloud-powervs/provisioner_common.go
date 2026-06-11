@@ -25,10 +25,8 @@ type IBMCloudPowerVSProvisioner struct {
 	PowerVSClusterName                                     string
 	PowerVSZone                                            string
 	PowerVSServiceInstanceId                               string
-	KubernetesBuildVersion                                 string
-	KubernetesReleaseMarker                                string
 	PowerVSImageID                                         string
-	PowerVSNetworkID                                       string
+	PowerVSNetworkName                                     string
 	PowerVSImageName                                       string
 	PowerVSSSHKeyName                                      string
 	PowerVSSystemType                                      string
@@ -36,6 +34,9 @@ type IBMCloudPowerVSProvisioner struct {
 	SSHPrivateKeyPath                                      string
 	WorkersCount                                           int
 	RetryOnTFFailure                                       int
+
+	KubernetesBuildVersion string
+	KubeconfigPath         string
 }
 
 // ensureKubetest2TFInstalled checks if kubetest2-tf is installed and installs it if needed
@@ -203,9 +204,6 @@ func (p *IBMCloudPowerVSProvisioner) CreateCluster(ctx context.Context, cfg *env
 	if p.KubernetesBuildVersion == "" {
 		p.KubernetesBuildVersion = "1.36.0"
 	}
-	if p.KubernetesReleaseMarker == "" {
-		p.KubernetesReleaseMarker = p.KubernetesBuildVersion
-	}
 	// WorkersCount defaults to 0 (no worker nodes needed)
 	if p.RetryOnTFFailure == 0 {
 		p.RetryOnTFFailure = 3
@@ -225,20 +223,21 @@ func (p *IBMCloudPowerVSProvisioner) CreateCluster(ctx context.Context, cfg *env
 		"--powervs-zone", p.PowerVSZone,
 		"--powervs-region", p.PowerVSRegion,
 		"--powervs-service-id", p.PowerVSServiceInstanceId,
+		"--powervs-network-name", p.PowerVSNetworkName,
 		"--powervs-api-key", p.IBMCloudPowerVSAPIKey,
 		"--powervs-ssh-key", p.PowerVSSSHKeyName,
 		"--build-version", p.KubernetesBuildVersion,
-		"--release-marker", p.KubernetesReleaseMarker,
+		"--release-marker", p.KubernetesBuildVersion,
+		"--kubeconfig-path", p.KubeconfigPath,
 		"--cluster-name", clusterName,
 		"--workers-count", strconv.Itoa(p.WorkersCount),
+		"--extra-vars=kubelet_extra_args:\"--runtime-request-timeout=20m\"",
 		"--up",
 		"--auto-approve",
 		"--retry-on-tf-failure", strconv.Itoa(p.RetryOnTFFailure),
 		"--break-kubetest-on-upfail", "true",
 		"--powervs-memory", p.PowerVSMemory,
 		"--extra-vars=directory:release",
-		"--test=exec",
-		"echo \"Kubernetes cluster is up!\"",
 	}
 
 	// Add SSH private key if provided
@@ -246,7 +245,7 @@ func (p *IBMCloudPowerVSProvisioner) CreateCluster(ctx context.Context, cfg *env
 		args = append(args, "--ssh-private-key", p.SSHPrivateKeyPath)
 	}
 
-	log.Infof("Running kubetest2-tf command: kubetest2-tf %s", strings.Join(args, " "))
+	log.Infof("Running kubetest2-tf command: %s", strings.Join(args, " "))
 
 	cmd := exec.CommandContext(ctx, "kubetest2-tf", args...)
 	cmd.Stdout = os.Stdout
@@ -259,6 +258,7 @@ func (p *IBMCloudPowerVSProvisioner) CreateCluster(ctx context.Context, cfg *env
 
 	log.Info("Cluster created successfully")
 	p.PowerVSClusterName = clusterName
+	cfg.WithKubeconfigFile(p.KubeconfigPath)
 	return nil
 }
 
@@ -269,20 +269,19 @@ func (p *IBMCloudPowerVSProvisioner) DeleteCluster(ctx context.Context, cfg *env
 		log.Warn("Cluster name is empty, skipping deletion")
 		return nil
 	}
+	if p.KubeconfigPath == "" {
+		p.KubeconfigPath = "/root/.kube/config"
+	}
 
 	// Set default values
 	if p.KubernetesBuildVersion == "" {
 		p.KubernetesBuildVersion = "1.36.1"
 	}
-	if p.KubernetesReleaseMarker == "" {
-		p.KubernetesReleaseMarker = p.KubernetesBuildVersion
-	}
-	// WorkersCount defaults to 0 (no worker nodes needed)
 	if p.RetryOnTFFailure == 0 {
 		p.RetryOnTFFailure = 3
 	}
 	if p.PowerVSMemory == "" {
-		p.PowerVSMemory = "32"
+		p.PowerVSMemory = "16"
 	}
 	// Detect API key from environment if not set
 	if p.IBMCloudPowerVSAPIKey == "" {
@@ -362,15 +361,13 @@ func NewIBMCloudPowerVSProvisioner(properties map[string]string) (pv.CloudProvis
 		PowerVSRegion:            properties["POWERVS_REGION"],
 		PowerVSClusterName:       properties["CLUSTER_NAME"],
 		PowerVSZone:              properties["POWERVS_ZONE"],
+		PowerVSNetworkName:       properties["POWERVS_NETWORK_NAME"],
 		PowerVSServiceInstanceId: properties["POWERVS_SERVICE_INSTANCE_ID"],
 		KubernetesBuildVersion:   properties["KUBERNETES_BUILD_VERSION"],
-		KubernetesReleaseMarker:  properties["KUBERNETES_RELEASE_MARKER"],
-		PowerVSNetworkID:         properties["POWERVS_NETWORK_ID"],
+		KubeconfigPath:           properties["KUBECONFIG_PATH"],
 		PowerVSImageName:         properties["POWERVS_IMAGE_NAME"],
 		PowerVSSSHKeyName:        properties["POWERVS_SSH_KEY_NAME"],
-		PowerVSSystemType:        properties["POWERVS_SYSTEM_TYPE"],
 		PowerVSMemory:            properties["POWERVS_MEMORY"],
-		PowerVSProcessorType:     properties["POWERVS_PROCESSOR_TYPE"],
 		PowerVSProcessors:        properties["POWERVS_PROCESSORS"],
 		SSHPrivateKeyPath:        properties["SSH_PRIVATE_KEY_PATH"],
 		WorkersCount:             workersCount,

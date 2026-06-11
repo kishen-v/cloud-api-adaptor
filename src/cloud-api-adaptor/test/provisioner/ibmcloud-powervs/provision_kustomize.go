@@ -8,13 +8,16 @@ package ibmcloud_powervs
 import (
 	"context"
 	"path/filepath"
+	"strings"
 
 	pv "github.com/confidential-containers/cloud-api-adaptor/src/cloud-api-adaptor/test/provisioner"
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
 )
 
 func NewIBMCloudPowerVSInstallOverlay(installDir, provider string) (pv.InstallOverlay, error) {
-	overlay, err := pv.NewKustomizeOverlay(filepath.Join(installDir, "overlays", provider))
+	// Convert provider name from ibmcloud_powervs to ibmcloud-powervs for directory path
+	overlayPath := strings.ReplaceAll(provider, "_", "-")
+	overlay, err := pv.NewKustomizeOverlay(filepath.Join(installDir, "overlays", overlayPath))
 	if err != nil {
 		return nil, err
 	}

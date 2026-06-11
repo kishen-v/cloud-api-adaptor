@@ -21,7 +21,6 @@ type IBMPowerVSProperties struct {
 	TestPodVMImage           string
 	PowerVSZone              string
 	PowerVSServiceInstanceID string
-	PowerVSNetworkID         string
 	PowerVSImageName         string
 	PowerVSSSHKeyName        string
 	PowerVSProcessorType     string
@@ -29,7 +28,6 @@ type IBMPowerVSProperties struct {
 	PowerVSMemory            string
 	PowerVSProcessors        string
 	KubernetesBuildVersion   string
-	KubernetesReleaseMarker  string
 	RetryOnTFFailure         int
 	SSHPrivateKeyPath        string
 
@@ -47,15 +45,11 @@ func InitIBMCloudProperties(properties map[string]string) error {
 		WorkerOS:                 properties["WORKER_OS"],
 		PowerVSZone:              properties["POWERVS_ZONE"],
 		PowerVSServiceInstanceID: properties["POWERVS_SERVICE_INSTANCE_ID"],
-		PowerVSNetworkID:         properties["POWERVS_NETWORK_ID"],
 		PowerVSImageName:         properties["POWERVS_IMAGE_NAME"],
 		PowerVSSSHKeyName:        properties["POWERVS_SSH_KEY_NAME"],
-		PowerVSProcessorType:     properties["POWERVS_PROCESSOR_TYPE"],
-		PowerVSSystemType:        properties["POWERVS_SYSTEM_TYPE"],
 		PowerVSMemory:            properties["POWERVS_MEMORY"],
 		PowerVSProcessors:        properties["POWERVS_PROCESSORS"],
 		KubernetesBuildVersion:   properties["KUBERNETES_BUILD_VERSION"],
-		KubernetesReleaseMarker:  properties["KUBERNETES_RELEASE_MARKER"],
 		SSHPrivateKeyPath:        properties["SSH_PRIVATE_KEY_PATH"],
 	}
 
