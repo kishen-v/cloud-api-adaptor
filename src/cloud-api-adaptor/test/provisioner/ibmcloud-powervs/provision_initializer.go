@@ -21,7 +21,6 @@ type IBMPowerVSProperties struct {
 	PowerVSZone              string
 	PowerVSRegion            string
 	PowerVSServiceInstanceID string
-	PowerVSImageName         string
 	PowerVSSSHKeyName        string
 	PowerVSProcessorType     string
 	PowerVSSystemType        string
@@ -45,7 +44,6 @@ func InitIBMCloudProperties(properties map[string]string) error {
 		WorkerOS:                 properties["WORKER_OS"],
 		PowerVSZone:              properties["POWERVS_ZONE"],
 		PowerVSServiceInstanceID: properties["POWERVS_SERVICE_INSTANCE_ID"],
-		PowerVSImageName:         properties["POWERVS_IMAGE_NAME"],
 		PowerVSSSHKeyName:        properties["POWERVS_SSH_KEY_NAME"],
 		PowerVSMemory:            properties["POWERVS_MEMORY"],
 		PowerVSProcessors:        properties["POWERVS_PROCESSORS"],
