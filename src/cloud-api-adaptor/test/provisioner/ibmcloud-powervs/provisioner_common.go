@@ -5,20 +5,20 @@ package ibmcloud_powervs // IBMCloudPowerVSProvisioner implements the CloudProvi
 
 import (
 	"context"
-	"strconv"
 
+	log "github.com/sirupsen/logrus"
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
 
-	byomprov "github.com/confidential-containers/cloud-api-adaptor/src/cloud-api-adaptor/test/provisioner/byom"
 	pv "github.com/confidential-containers/cloud-api-adaptor/src/cloud-api-adaptor/test/provisioner"
+	byomprov "github.com/confidential-containers/cloud-api-adaptor/src/cloud-api-adaptor/test/provisioner/byom"
 )
 
 // IBMCloudPowerVSProvisioner implements CloudProvisioner for IBM Cloud PowerVS.
-// Cluster lifecycle (kind) is delegated to an embedded ByomProvisioner; this
-// type only carries the PowerVS-specific properties used by the Helm chart.
+// Kind cluster lifecycle is handled by calling ByomProvisioner methods directly;
+// the type does NOT embed ByomProvisioner so it never satisfies PodVMInstanceHandler
+// (PowerVS peer-pod VMs are real instances already present in the workspace).
 type IBMCloudPowerVSProvisioner struct {
-	// Embedded BYOM provisioner handles kind cluster creation/deletion.
-	*byomprov.ByomProvisioner
+	byom *byomprov.ByomProvisioner
 
 	IBMCloudPowerVSAPIKey    string
 	PowerVSRegion            string
@@ -35,11 +35,21 @@ type IBMCloudPowerVSProvisioner struct {
 }
 
 func (p *IBMCloudPowerVSProvisioner) CreateCluster(ctx context.Context, cfg *envconf.Config) error {
-	return p.ByomProvisioner.CreateCluster(ctx, cfg)
+	log.Info("IBMCloudPowerVS: provisioning local kind cluster for e2e tests")
+	if err := p.byom.CreateCluster(ctx, cfg); err != nil {
+		return err
+	}
+	log.Info("IBMCloudPowerVS: kind cluster ready")
+	return nil
 }
 
 func (p *IBMCloudPowerVSProvisioner) DeleteCluster(ctx context.Context, cfg *envconf.Config) error {
-	return p.ByomProvisioner.DeleteCluster(ctx, cfg)
+	log.Info("IBMCloudPowerVS: deleting local kind cluster")
+	if err := p.byom.DeleteCluster(ctx, cfg); err != nil {
+		return err
+	}
+	log.Info("IBMCloudPowerVS: kind cluster deleted")
+	return nil
 }
 
 func (p *IBMCloudPowerVSProvisioner) CreateVPC(ctx context.Context, cfg *envconf.Config) error {
@@ -52,25 +62,25 @@ func (p *IBMCloudPowerVSProvisioner) DeleteVPC(ctx context.Context, cfg *envconf
 
 func (p *IBMCloudPowerVSProvisioner) GetProperties(ctx context.Context, cfg *envconf.Config) map[string]string {
 	return map[string]string{
-		"IBMCLOUD_API_KEY":             p.IBMCloudPowerVSAPIKey,
-		"POWERVS_REGION":               p.PowerVSRegion,
-		"POWERVS_ZONE":                 p.PowerVSZone,
-		"POWERVS_SERVICE_INSTANCE_ID":  p.PowerVSServiceInstanceId,
-		"POWERVS_IMAGE_ID":             p.PowerVSImageID,
-		"POWERVS_NETWORK_ID":           p.PowerVSNetworkID,
-		"POWERVS_NETWORK_NAME":         p.PowerVSNetworkName,
-		"POWERVS_SSH_KEY_NAME":         p.PowerVSSSHKeyName,
-		"POWERVS_SYSTEM_TYPE":          p.PowerVSSystemType,
-		"POWERVS_MEMORY":               p.PowerVSMemory,
-		"POWERVS_PROCESSOR_TYPE":       p.PowerVSProcessorType,
-		"POWERVS_PROCESSORS":           p.PowerVSProcessors,
+		"IBMCLOUD_API_KEY":            p.IBMCloudPowerVSAPIKey,
+		"POWERVS_REGION":              p.PowerVSRegion,
+		"POWERVS_ZONE":                p.PowerVSZone,
+		"POWERVS_SERVICE_INSTANCE_ID": p.PowerVSServiceInstanceId,
+		"POWERVS_IMAGE_ID":            p.PowerVSImageID,
+		"POWERVS_NETWORK_ID":          p.PowerVSNetworkID,
+		"POWERVS_NETWORK_NAME":        p.PowerVSNetworkName,
+		"POWERVS_SSH_KEY_NAME":        p.PowerVSSSHKeyName,
+		"POWERVS_SYSTEM_TYPE":         p.PowerVSSystemType,
+		"POWERVS_MEMORY":              p.PowerVSMemory,
+		"POWERVS_PROCESSOR_TYPE":      p.PowerVSProcessorType,
+		"POWERVS_PROCESSORS":          p.PowerVSProcessors,
 		// BYOM fields required by the Helm chart's SSH key secret and worker-node logic
-		"SSH_SECRET_PRIV_KEY_PATH":     byomprov.ByomProps.SSHSecretPrivKeyPath,
-		"SSH_SECRET_PUB_KEY_PATH":      byomprov.ByomProps.SSHSecretPubKeyPath,
-		"SSH_USERNAME":                 byomprov.ByomProps.SSHUsername,
-		"CLUSTER_NAME":                 byomprov.ByomProps.ClusterName,
-		"WORKER_NODE_NAME":             byomprov.ByomProps.WorkerNodeName,
-		"CONTAINER_RUNTIME":            byomprov.ByomProps.ContainerRuntime,
+		"SSH_SECRET_PRIV_KEY_PATH": byomprov.ByomProps.SSHSecretPrivKeyPath,
+		"SSH_SECRET_PUB_KEY_PATH":  byomprov.ByomProps.SSHSecretPubKeyPath,
+		"SSH_USERNAME":             byomprov.ByomProps.SSHUsername,
+		"CLUSTER_NAME":             byomprov.ByomProps.ClusterName,
+		"WORKER_NODE_NAME":         byomprov.ByomProps.WorkerNodeName,
+		"CONTAINER_RUNTIME":        byomprov.ByomProps.ContainerRuntime,
 	}
 }
 
@@ -83,7 +93,7 @@ func NewIBMCloudPowerVSProvisioner(properties map[string]string) (pv.CloudProvis
 		return nil, err
 	}
 
-	// Build the embedded BYOM provisioner (handles kind cluster lifecycle).
+	// Build the BYOM provisioner used only for kind cluster lifecycle.
 	byomBase, err := byomprov.NewByomProvisioner(properties)
 	if err != nil {
 		return nil, err
@@ -91,12 +101,11 @@ func NewIBMCloudPowerVSProvisioner(properties map[string]string) (pv.CloudProvis
 
 	memory := properties["POWERVS_MEMORY"]
 	if memory == "" {
-		memory = strconv.Itoa(IBMPowerVSProps.WorkerCount) // not used for memory – keep original default
 		memory = "2"
 	}
 
 	return &IBMCloudPowerVSProvisioner{
-		ByomProvisioner:          byomBase.(*byomprov.ByomProvisioner),
+		byom:                     byomBase.(*byomprov.ByomProvisioner),
 		IBMCloudPowerVSAPIKey:    properties["IBMCLOUD_API_KEY"],
 		PowerVSRegion:            properties["POWERVS_REGION"],
 		PowerVSZone:              properties["POWERVS_ZONE"],

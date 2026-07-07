@@ -10,6 +10,6 @@ import (
 )
 
 func init() {
-	pv.NewProvisionerFunctions["ibmcloud_powervs"] = NewIBMCloudPowerVSProvisioner
-	pv.NewInstallChartFunctions["ibmcloud_powervs"] = NewIBMCloudPowerVSInstallChart
+	pv.NewProvisionerFunctions["ibmcloud-powervs"] = NewIBMCloudPowerVSProvisioner
+	pv.NewInstallChartFunctions["ibmcloud-powervs"] = NewIBMCloudPowerVSInstallChart
 }

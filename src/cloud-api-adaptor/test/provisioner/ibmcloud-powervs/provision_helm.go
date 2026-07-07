@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	byomprov "github.com/confidential-containers/cloud-api-adaptor/src/cloud-api-adaptor/test/provisioner/byom"
 	pv "github.com/confidential-containers/cloud-api-adaptor/src/cloud-api-adaptor/test/provisioner"
+	byomprov "github.com/confidential-containers/cloud-api-adaptor/src/cloud-api-adaptor/test/provisioner/byom"
 	log "github.com/sirupsen/logrus"
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
 )
@@ -25,10 +25,10 @@ func NewIBMCloudPowerVSInstallChart(installDir, provider string) (pv.InstallChar
 	namespace := pv.GetCAANamespace()
 	releaseName := "peerpods"
 	debug := false
-	// Convert provider name from ibmcloud_powervs to ibmcloudpowervs for helm values
-	providerName := strings.ReplaceAll(provider, "_", "")
 
-	helm, err := pv.NewHelm(chartPath, namespace, releaseName, providerName, debug)
+	// The providers file on disk is ibmcloudpowervs.yaml and the chart provider value is
+	// also "ibmcloudpowervs", matching what CLOUD_PROVIDER is set to when running tests.
+	helm, err := pv.NewHelm(chartPath, namespace, releaseName, "ibmcloudpowervs", debug)
 	if err != nil {
 		return nil, err
 	}
@@ -115,9 +115,12 @@ func (ic *IBMCloudPowerVSInstallChart) Uninstall(ctx context.Context, cfg *envco
 }
 
 func (ic *IBMCloudPowerVSInstallChart) Configure(ctx context.Context, cfg *envconf.Config, properties map[string]string) error {
+	// Must match the provider/providerConfigs/providerSecrets key in ibmcloudpowervs.yaml.
+	const chartProvider = "ibmcloud-powervs"
+
 	// Set IBM Cloud API key as a provider secret.
 	if key := properties["IBMCLOUD_API_KEY"]; key != "" {
-		ic.Helm.OverrideProviderSecrets["IBMCLOUD_API_KEY"] = key
+		ic.Helm.OverrideValues[fmt.Sprintf("providerSecrets.%s.IBMCLOUD_API_KEY", chartProvider)] = key
 	}
 
 	// Set PowerVS-specific provider config values from properties.
@@ -134,7 +137,7 @@ func (ic *IBMCloudPowerVSInstallChart) Configure(ctx context.Context, cfg *envco
 	}
 	for _, k := range providerKeys {
 		if v := properties[k]; v != "" {
-			ic.Helm.OverrideProviderValues[k] = v
+			ic.Helm.OverrideValues[fmt.Sprintf("providerConfigs.%s.%s", chartProvider, k)] = v
 		}
 	}
 
