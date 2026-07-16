@@ -2,7 +2,6 @@
 # Avoid editing manually. You can, but CI will check for drift.
 # Provider: ibmcloud-powervs
 
-# TODO: to discuss with Amulya on how the sync-chart generates ibmcloudpowervs while the cloud provider expected by the daemonset is ibmcloud-powervs
 provider: ibmcloud-powervs
 
 providerConfigs:

@@ -22,7 +22,7 @@ func NewIBMCloudPowerVSInstallChart(installDir, provider string) (pv.InstallChar
 
 	// The providers file on disk is ibmcloudpowervs.yaml and the chart provider value is
 	// also "ibmcloudpowervs", matching what CLOUD_PROVIDER is set to when running tests.
-	helm, err := pv.NewHelm(chartPath, namespace, releaseName, "ibmcloudpowervs", debug)
+	helm, err := pv.NewHelm(chartPath, namespace, releaseName, "ibmcloud-powervs", debug)
 	if err != nil {
 		return nil, err
 	}
