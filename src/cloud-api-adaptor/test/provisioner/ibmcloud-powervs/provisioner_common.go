@@ -12,6 +12,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/IBM-Cloud/power-go-client/clients/instance"
+	"github.com/IBM-Cloud/power-go-client/ibmpisession"
+	"github.com/IBM/go-sdk-core/v5/core"
 	log "github.com/sirupsen/logrus"
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
 
@@ -23,6 +26,7 @@ type IBMCloudPowerVSProvisioner struct {
 	kind *KindCluster
 
 	IBMCloudPowerVSAPIKey    string
+	IBMCloudAccountID        string
 	PowerVSZone              string
 	PowerVSServiceInstanceID string
 	PowerVSImageID           string
@@ -50,6 +54,11 @@ type KindCluster struct {
 	properties KindClusterProperties
 }
 
+type powerVSClient struct {
+	session           *ibmpisession.IBMPISession
+	serviceInstanceID string
+}
+
 func (p *IBMCloudPowerVSProvisioner) CreateCluster(ctx context.Context, cfg *envconf.Config) error {
 	log.Info("IBMCloudPowerVS: provisioning local kind cluster for e2e tests")
 	if err := p.kind.CreateCluster(ctx, cfg); err != nil {
@@ -69,6 +78,11 @@ func (p *IBMCloudPowerVSProvisioner) DeleteCluster(ctx context.Context, cfg *env
 }
 
 func (p *IBMCloudPowerVSProvisioner) CreateVPC(ctx context.Context, cfg *envconf.Config) error {
+	log.Infof("IBMCloudPowerVS: checking podvm image %s exists and is active", p.PowerVSImageID)
+	if err := p.CheckImageExistsAndActive(ctx); err != nil {
+		return fmt.Errorf("podvm image check failed: %w", err)
+	}
+	log.Infof("IBMCloudPowerVS: podvm image %s is active", p.PowerVSImageID)
 	return nil
 }
 
@@ -79,6 +93,7 @@ func (p *IBMCloudPowerVSProvisioner) DeleteVPC(ctx context.Context, cfg *envconf
 func (p *IBMCloudPowerVSProvisioner) GetProperties(ctx context.Context, cfg *envconf.Config) map[string]string {
 	return map[string]string{
 		"IBMCLOUD_API_KEY":            p.IBMCloudPowerVSAPIKey,
+		"IBMCLOUD_ACCOUNT_ID":         p.IBMCloudAccountID,
 		"POWERVS_ZONE":                p.PowerVSZone,
 		"POWERVS_SERVICE_INSTANCE_ID": p.PowerVSServiceInstanceID,
 		"POWERVS_IMAGE_ID":            p.PowerVSImageID,
@@ -201,6 +216,57 @@ func (k *KindCluster) CreateCluster(ctx context.Context, cfg *envconf.Config) er
 
 func (k *KindCluster) DeleteCluster(ctx context.Context, cfg *envconf.Config) error {
 	return k.runScript("delete")
+}
+
+func (p *IBMCloudPowerVSProvisioner) CheckImageExistsAndActive(ctx context.Context) error {
+	if p.PowerVSImageID == "" {
+		return fmt.Errorf("POWERVS_IMAGE_ID is not set")
+	}
+
+	client, err := newPowerVSClient(p.IBMCloudPowerVSAPIKey, p.IBMCloudAccountID, p.PowerVSServiceInstanceID, p.PowerVSZone)
+	if err != nil {
+		return fmt.Errorf("failed to create PowerVS client: %w", err)
+	}
+
+	image, err := client.imageClient(ctx).Get(p.PowerVSImageID)
+	if err != nil {
+		return fmt.Errorf("failed to get image with ID %s: %w", p.PowerVSImageID, err)
+	}
+	if image == nil {
+		return fmt.Errorf("image with ID %s was not found", p.PowerVSImageID)
+	}
+
+	if image.State != "active" {
+		return fmt.Errorf("image with ID %s is not active (current state: %q)", p.PowerVSImageID, image.State)
+	}
+
+	log.Infof("IBMCloudPowerVS: image with ID %s is active", p.PowerVSImageID)
+
+	return nil
+}
+
+func newPowerVSClient(apiKey, accountID, serviceInstanceID, zone string) (*powerVSClient, error) {
+	authenticator := &core.IamAuthenticator{
+		ApiKey: apiKey,
+	}
+
+	session, err := ibmpisession.NewIBMPISession(&ibmpisession.IBMPIOptions{
+		Authenticator: authenticator,
+		UserAccount:   accountID,
+		Zone:          zone,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &powerVSClient{
+		session:           session,
+		serviceInstanceID: serviceInstanceID,
+	}, nil
+}
+
+func (c *powerVSClient) imageClient(ctx context.Context) *instance.IBMPIImageClient {
+	return instance.NewIBMPIImageClient(ctx, c.session, c.serviceInstanceID)
 }
 
 func (k *KindCluster) runScript(action string) error {
