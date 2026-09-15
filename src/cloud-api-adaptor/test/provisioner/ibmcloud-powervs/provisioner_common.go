@@ -1,7 +1,7 @@
 // (C) Copyright Confidential Containers Contributors
 // SPDX-License-Identifier: Apache-2.0
 
-package ibmcloudpowervs // IBMCloudPowerVSProvisioner implements the CloudProvisioner interface for IBM Cloud PowerVS.
+package ibmcloudpowervs
 
 import (
 	"context"
