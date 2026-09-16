@@ -99,7 +99,6 @@ func (p *IBMCloudPowerVSProvisioner) GetProperties(ctx context.Context, cfg *env
 		"POWERVS_MEMORY":              p.PowerVSMemory,
 		"POWERVS_PROCESSOR_TYPE":      p.PowerVSProcessorType,
 		"POWERVS_PROCESSORS":          p.PowerVSProcessors,
-		"CLUSTER_NAME":                p.kind.properties.ClusterName,
 		"FORWARDER_PORT":              p.ForwarderPort,
 		"PROXY_TIMEOUT":               p.ProxyTimeout,
 		"USE_PUBLIC_IP":               p.UsePublicIP,
@@ -130,9 +129,6 @@ func newKindCluster(properties map[string]string) (*KindCluster, error) {
 		clusterName = "peer-pods-e2e"
 	}
 	kindConfigFile := properties["KIND_CONFIG_FILE"]
-	if kindConfigFile == "" {
-		return nil, fmt.Errorf("KIND_CONFIG_FILE must be set")
-	}
 	containerRuntime := properties["CONTAINER_RUNTIME"]
 	if containerRuntime == "" {
 		containerRuntime = "containerd"
@@ -153,6 +149,9 @@ func newKindCluster(properties map[string]string) (*KindCluster, error) {
 }
 
 func (k *KindCluster) CreateCluster(ctx context.Context, cfg *envconf.Config) error {
+	if k.properties.KindConfigFile == "" {
+		return fmt.Errorf("KIND_CONFIG_FILE must be set to create a kind cluster")
+	}
 	kindConfigPath, err := filepath.Abs(k.properties.KindConfigFile)
 	if err != nil {
 		return fmt.Errorf("error getting absolute path of kind config file: %w", err)

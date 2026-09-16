@@ -19,7 +19,6 @@ func newIBMCloudPowerVSProvisioner(properties map[string]string) (*IBMCloudPower
 			"POWERVS_SERVICE_INSTANCE_ID",
 			"POWERVS_IMAGE_ID",
 			"POWERVS_NETWORK_ID",
-			"POWERVS_SSH_KEY_NAME",
 		}
 		for _, key := range required {
 			if properties[key] == "" {
