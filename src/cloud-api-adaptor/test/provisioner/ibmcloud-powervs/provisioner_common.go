@@ -159,9 +159,8 @@ func (k *KindCluster) CreateCluster(ctx context.Context, cfg *envconf.Config) er
 	}
 
 	log.Infof("Using kind config from: %s", kindConfigPath)
-	os.Setenv("KIND_CONFIG_FILE", kindConfigPath)
 
-	if err := k.runScript("create"); err != nil {
+	if err := k.runScript("create", kindConfigPath); err != nil {
 		log.Errorf("Error creating kind cluster: %v", err)
 		return err
 	}
@@ -211,7 +210,7 @@ func (k *KindCluster) CreateCluster(ctx context.Context, cfg *envconf.Config) er
 }
 
 func (k *KindCluster) DeleteCluster(ctx context.Context, cfg *envconf.Config) error {
-	return k.runScript("delete")
+	return k.runScript("delete", "")
 }
 
 func (p *IBMCloudPowerVSProvisioner) CheckImageExistsAndActive(ctx context.Context) error {
@@ -256,7 +255,7 @@ func newPowerVSImageClient(ctx context.Context, apiKey, accountID, serviceInstan
 	return instance.NewIBMPIImageClient(ctx, session, serviceInstanceID), nil
 }
 
-func (k *KindCluster) runScript(action string) error {
+func (k *KindCluster) runScript(action, kindConfigPath string) error {
 	scriptPath, err := pv.KindClusterScriptPath()
 	if err != nil {
 		return fmt.Errorf("failed to locate kind_cluster.sh: %w", err)
@@ -272,6 +271,9 @@ func (k *KindCluster) runScript(action string) error {
 		"KUBECONFIG=",
 		"CONTAINER_RUNTIME="+k.properties.ContainerRuntime,
 	)
+	if kindConfigPath != "" {
+		cmd.Env = append(cmd.Env, "KIND_CONFIG_FILE="+kindConfigPath)
+	}
 	if err := cmd.Run(); err != nil {
 		log.Errorf("Error running kind_cluster.sh %s: %v", action, err)
 		return err
