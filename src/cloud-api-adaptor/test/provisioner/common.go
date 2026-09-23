@@ -7,10 +7,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
+	log "github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/e2e-framework/klient/k8s"
@@ -39,6 +43,136 @@ func KindClusterScriptPath() (string, error) {
 }
 
 var Action string
+
+// KindClusterProperties holds the properties needed to manage a local kind cluster.
+type KindClusterProperties struct {
+	ClusterName      string
+	ContainerRuntime string
+	KindConfigFile   string
+	WorkerNodeName   string
+}
+
+// KindCluster manages a local kind cluster for e2e testing.
+type KindCluster struct {
+	properties KindClusterProperties
+}
+
+// NewKindCluster creates a KindCluster from a properties map, applying sensible defaults.
+func NewKindCluster(properties map[string]string) (*KindCluster, error) {
+	clusterName := properties["CLUSTER_NAME"]
+	if clusterName == "" {
+		clusterName = "peer-pods-e2e"
+	}
+	kindConfigFile := properties["KIND_CONFIG_FILE"]
+	containerRuntime := properties["CONTAINER_RUNTIME"]
+	if containerRuntime == "" {
+		containerRuntime = "containerd"
+	}
+	workerNodeName := properties["WORKER_NODE_NAME"]
+	if workerNodeName == "" {
+		workerNodeName = fmt.Sprintf("%s-worker", clusterName)
+	}
+
+	return &KindCluster{
+		properties: KindClusterProperties{
+			ClusterName:      clusterName,
+			ContainerRuntime: containerRuntime,
+			KindConfigFile:   kindConfigFile,
+			WorkerNodeName:   workerNodeName,
+		},
+	}, nil
+}
+
+func (k *KindCluster) CreateCluster(ctx context.Context, cfg *envconf.Config) error {
+	if k.properties.KindConfigFile == "" {
+		return fmt.Errorf("KIND_CONFIG_FILE must be set to create a kind cluster")
+	}
+	kindConfigPath, err := filepath.Abs(k.properties.KindConfigFile)
+	if err != nil {
+		return fmt.Errorf("error getting absolute path of kind config file: %w", err)
+	}
+
+	log.Infof("Using kind config from: %s", kindConfigPath)
+
+	if err := k.runScript("create", kindConfigPath); err != nil {
+		log.Errorf("Error creating kind cluster: %v", err)
+		return err
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get user home directory: %w", err)
+	}
+	cfg.WithKubeconfigFile(filepath.Join(home, ".kube/config"))
+
+	if err := AddNodeRoleWorkerLabel(context.Background(), k.properties.ClusterName, cfg); err != nil {
+		return fmt.Errorf("failed to label nodes: %w", err)
+	}
+
+	// Update containerd configuration to not discard unpacked layers
+	log.Info("Configuring containerd on worker node to keep unpacked layers...")
+
+	cmd := exec.Command("docker", "exec", k.properties.WorkerNodeName, "sed", "-i",
+		"s/discard_unpacked_layers = true/discard_unpacked_layers = false/g",
+		"/etc/containerd/config.toml")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Warnf("Failed to update containerd config: %v, output: %s", err, string(output))
+	} else {
+		log.Info("Updated containerd config to keep unpacked layers")
+
+		// Restart containerd to apply the change
+		cmd = exec.Command("docker", "exec", k.properties.WorkerNodeName, "systemctl", "restart", "containerd")
+		output, err = cmd.CombinedOutput()
+		if err != nil {
+			log.Warnf("Failed to restart containerd: %v, output: %s", err, string(output))
+		} else {
+			log.Info("Restarted containerd, waiting for it to be ready...")
+			time.Sleep(5 * time.Second)
+
+			// Verify if containerd is running
+			cmd = exec.Command("docker", "exec", k.properties.WorkerNodeName, "systemctl", "is-active", "containerd")
+			output, err = cmd.CombinedOutput()
+			status := strings.TrimSpace(string(output))
+			if err != nil || status != "active" {
+				log.Warnf("Containerd may not be running properly: status=%s, err=%v", status, err)
+			} else {
+				log.Info("Containerd is active and running")
+			}
+		}
+	}
+	return nil
+}
+
+func (k *KindCluster) DeleteCluster(ctx context.Context, cfg *envconf.Config) error {
+	return k.runScript("delete", "")
+}
+
+func (k *KindCluster) runScript(action, kindConfigPath string) error {
+	scriptPath, err := KindClusterScriptPath()
+	if err != nil {
+		return fmt.Errorf("failed to locate kind_cluster.sh: %w", err)
+	}
+	cmd := exec.Command("/bin/bash", scriptPath, action)
+	cmd.Stdout = os.Stdout
+	// TODO: better handle stderr. Messages getting out of order.
+	cmd.Stderr = os.Stderr
+	cmd.Env = os.Environ()
+	// Set CLUSTER_NAME and CONTAINER_RUNTIME. Unset KUBECONFIG so the default path is used.
+	cmd.Env = append(cmd.Env,
+		"CLUSTER_NAME="+k.properties.ClusterName,
+		"KUBECONFIG=",
+		"CONTAINER_RUNTIME="+k.properties.ContainerRuntime,
+	)
+	if kindConfigPath != "" {
+		cmd.Env = append(cmd.Env, "KIND_CONFIG_FILE="+kindConfigPath)
+	}
+	if err := cmd.Run(); err != nil {
+		log.Errorf("Error running kind_cluster.sh %s: %v", action, err)
+		return err
+	}
+	return nil
+}
 
 // Adds the worker label to all workers nodes in a given cluster
 func AddNodeRoleWorkerLabel(ctx context.Context, clusterName string, cfg *envconf.Config) error {

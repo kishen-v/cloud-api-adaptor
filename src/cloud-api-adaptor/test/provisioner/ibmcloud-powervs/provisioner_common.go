@@ -6,11 +6,6 @@ package ibmcloudpowervs
 import (
 	"context"
 	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"strings"
-	"time"
 
 	"github.com/IBM-Cloud/power-go-client/clients/instance"
 	"github.com/IBM-Cloud/power-go-client/ibmpisession"
@@ -23,7 +18,7 @@ import (
 
 // IBMCloudPowerVSProvisioner implements CloudProvisioner for IBM Cloud PowerVS.
 type IBMCloudPowerVSProvisioner struct {
-	kind *KindCluster
+	kind *pv.KindCluster
 
 	IBMCloudPowerVSAPIKey    string
 	IBMCloudAccountID        string
@@ -39,19 +34,6 @@ type IBMCloudPowerVSProvisioner struct {
 	ForwarderPort            string
 	ProxyTimeout             string
 	UsePublicIP              string
-}
-
-// KindClusterProperties holds the properties needed to manage a local kind cluster.
-type KindClusterProperties struct {
-	ClusterName      string
-	ContainerRuntime string
-	KindConfigFile   string
-	WorkerNodeName   string
-}
-
-// KindCluster manages a local kind cluster for e2e testing.
-type KindCluster struct {
-	properties KindClusterProperties
 }
 
 func (p *IBMCloudPowerVSProvisioner) CreateCluster(ctx context.Context, cfg *envconf.Config) error {
@@ -115,101 +97,12 @@ func NewIBMCloudPowerVSProvisioner(properties map[string]string) (pv.CloudProvis
 		return nil, err
 	}
 
-	provisioner.kind, err = newKindCluster(properties)
+	provisioner.kind, err = pv.NewKindCluster(properties)
 	if err != nil {
 		return nil, err
 	}
 
 	return provisioner, nil
-}
-
-func newKindCluster(properties map[string]string) (*KindCluster, error) {
-	clusterName := properties["CLUSTER_NAME"]
-	if clusterName == "" {
-		clusterName = "peer-pods-e2e"
-	}
-	kindConfigFile := properties["KIND_CONFIG_FILE"]
-	containerRuntime := properties["CONTAINER_RUNTIME"]
-	if containerRuntime == "" {
-		containerRuntime = "containerd"
-	}
-	workerNodeName := properties["WORKER_NODE_NAME"]
-	if workerNodeName == "" {
-		workerNodeName = fmt.Sprintf("%s-worker", clusterName)
-	}
-
-	return &KindCluster{
-		properties: KindClusterProperties{
-			ClusterName:      clusterName,
-			ContainerRuntime: containerRuntime,
-			KindConfigFile:   kindConfigFile,
-			WorkerNodeName:   workerNodeName,
-		},
-	}, nil
-}
-
-func (k *KindCluster) CreateCluster(ctx context.Context, cfg *envconf.Config) error {
-	if k.properties.KindConfigFile == "" {
-		return fmt.Errorf("KIND_CONFIG_FILE must be set to create a kind cluster")
-	}
-	kindConfigPath, err := filepath.Abs(k.properties.KindConfigFile)
-	if err != nil {
-		return fmt.Errorf("error getting absolute path of kind config file: %w", err)
-	}
-
-	log.Infof("Using kind config from: %s", kindConfigPath)
-
-	if err := k.runScript("create", kindConfigPath); err != nil {
-		log.Errorf("Error creating kind cluster: %v", err)
-		return err
-	}
-
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("failed to get user home directory: %w", err)
-	}
-	cfg.WithKubeconfigFile(filepath.Join(home, ".kube/config"))
-
-	if err := pv.AddNodeRoleWorkerLabel(context.Background(), k.properties.ClusterName, cfg); err != nil {
-		return fmt.Errorf("failed to label nodes: %w", err)
-	}
-	// Update containerd configuration to not discard unpacked layers
-	log.Info("Configuring containerd on worker node to keep unpacked layers...")
-
-	cmd := exec.Command("docker", "exec", k.properties.WorkerNodeName, "sed", "-i",
-		"s/discard_unpacked_layers = true/discard_unpacked_layers = false/g",
-		"/etc/containerd/config.toml")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		log.Warnf("Failed to update containerd config: %v, output: %s", err, string(output))
-	} else {
-		log.Info("Updated containerd config to keep unpacked layers")
-
-		// Restart containerd to apply the change
-		cmd = exec.Command("docker", "exec", k.properties.WorkerNodeName, "systemctl", "restart", "containerd")
-		output, err = cmd.CombinedOutput()
-		if err != nil {
-			log.Warnf("Failed to restart containerd: %v, output: %s", err, string(output))
-		} else {
-			log.Info("Restarted containerd, waiting for it to be ready...")
-			time.Sleep(5 * time.Second)
-
-			// Verify if containerd is running
-			cmd = exec.Command("docker", "exec", k.properties.WorkerNodeName, "systemctl", "is-active", "containerd")
-			output, err = cmd.CombinedOutput()
-			status := strings.TrimSpace(string(output))
-			if err != nil || status != "active" {
-				log.Warnf("Containerd may not be running properly: status=%s, err=%v", status, err)
-			} else {
-				log.Info("Containerd is active and running")
-			}
-		}
-	}
-	return nil
-}
-
-func (k *KindCluster) DeleteCluster(ctx context.Context, cfg *envconf.Config) error {
-	return k.runScript("delete", "")
 }
 
 func (p *IBMCloudPowerVSProvisioner) CheckImageExistsAndActive(ctx context.Context) error {
@@ -254,28 +147,3 @@ func newPowerVSImageClient(ctx context.Context, apiKey, accountID, serviceInstan
 	return instance.NewIBMPIImageClient(ctx, session, serviceInstanceID), nil
 }
 
-func (k *KindCluster) runScript(action, kindConfigPath string) error {
-	scriptPath, err := pv.KindClusterScriptPath()
-	if err != nil {
-		return fmt.Errorf("failed to locate kind_cluster.sh: %w", err)
-	}
-	cmd := exec.Command("/bin/bash", scriptPath, action)
-	cmd.Stdout = os.Stdout
-	// TODO: better handle stderr. Messages getting out of order.
-	cmd.Stderr = os.Stderr
-	cmd.Env = os.Environ()
-	// Set CLUSTER_NAME and CONTAINER_RUNTIME. Unset KUBECONFIG so the default path is used.
-	cmd.Env = append(cmd.Env,
-		"CLUSTER_NAME="+k.properties.ClusterName,
-		"KUBECONFIG=",
-		"CONTAINER_RUNTIME="+k.properties.ContainerRuntime,
-	)
-	if kindConfigPath != "" {
-		cmd.Env = append(cmd.Env, "KIND_CONFIG_FILE="+kindConfigPath)
-	}
-	if err := cmd.Run(); err != nil {
-		log.Errorf("Error running kind_cluster.sh %s: %v", action, err)
-		return err
-	}
-	return nil
-}
