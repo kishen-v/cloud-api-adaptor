@@ -228,7 +228,7 @@ func createDomainXMLs390x(client *libvirtClient, cfg *domainConfig, vm *vmConfig
 		},
 	}
 
-	return &libvirtxml.Domain{
+	domain := &libvirtxml.Domain{
 		Type:        "kvm",
 		Name:        cfg.name,
 		Description: "This Virtual Machine is the peer-pod VM",
@@ -300,7 +300,19 @@ func createDomainXMLs390x(client *libvirtClient, cfg *domainConfig, vm *vmConfig
 				},
 			},
 		},
-	}, nil
+	}
+
+	switch vm.launchSecurityType {
+	case S390PV:
+		domain.LaunchSecurity = &libvirtxml.DomainLaunchSecurity{
+			S390PV: &libvirtxml.DomainLaunchSecurityS390PV{},
+		}
+		return domain, nil
+	case NoLaunchSecurity:
+		return domain, nil
+	default:
+		return nil, fmt.Errorf("launch security type %s is not supported for s390x", vm.launchSecurityType)
+	}
 }
 
 func createDomainXMLx86_64(client *libvirtClient, cfg *domainConfig, vm *vmConfig) (*libvirtxml.Domain, error) {
@@ -640,6 +652,11 @@ func CreateDomain(ctx context.Context, libvirtClient *libvirtClient, v *vmConfig
 	if err != nil {
 		return nil, fmt.Errorf("Failed to define domain: %s", err)
 	}
+	defer func() {
+		if freeErr := dom.Free(); freeErr != nil {
+			logger.Printf("Warning: failed to free domain handle: %v", freeErr)
+		}
+	}()
 
 	// Start Domain.
 	logger.Printf("Starting VM '%s'", v.name)
@@ -677,7 +694,7 @@ func CreateDomain(ctx context.Context, libvirtClient *libvirtClient, v *vmConfig
 		retry.Attempts(GetDomainIPsRetries),
 		retry.Delay(GetDomainIPsSleep),
 	); err != nil {
-		logger.Printf("Unable to get IP addresses after %d retries (sleep time=%ds): %s",
+		logger.Printf("Unable to get IP addresses after %d retries (sleep time=%v): %s",
 			GetDomainIPsRetries, GetDomainIPsSleep, err)
 		// Returning the instance with UUID allows the caller to clean it up properly.
 		return &createDomainOutput{
